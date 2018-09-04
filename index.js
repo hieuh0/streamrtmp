@@ -4,7 +4,7 @@ app.set('view engine', 'ejs');
 app.use(express.static('public'));
 var server = require("http").Server(app);
 var io = require("socket.io")(server);
-server.listen(3000);
+server.listen( process.env.PORT || 3000);
 
 // index page 
 app.get('/', function(req, res) {
