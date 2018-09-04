@@ -1,107 +1,83 @@
-var express = require('express');
+
+'use strict';
+ var express = require('express');
 var app = express();
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 var server = require("http").Server(app);
 var io = require("socket.io")(server);
 server.listen( process.env.PORT || 3000);
+// var os = require('os');
+// var nodeStatic = require('node-static');
+// var https = require('https');
+// var socketIO = require('socket.io');
+// var fs = require("fs");
+// var options = {
+//   key: fs.readFileSync('key.pem'),
+//   cert: fs.readFileSync('cert.pem')
+// };
 
-// index page 
-app.get('/', function(req, res) {
-    res.render('index');
+// var fileServer = new(nodeStatic.Server)();
+// var app = https.createServer(options,function(req, res) {
+//   fileServer.serve(req, res);
+
+// }).listen(1794);
+app.get('/call', function(req, res) {
+    res.render('call');
 });
 
-app.get('/live',(req,res)=>{
-  res.render('demo');
-});
 
+io.sockets.on('connection', function(socket) {
 
-
-const NodeMediaServer = require('node-media-server');
-
-const config = {
-  logType: 3,
-
-  rtmp: {
-    port: process.env.PORT ||1935,
-    chunk_size: 60000,
-    gop_cache: true,
-    ping: 60,
-    ping_timeout: 10
-  },
-  http: {
-    port: 8000,
-    allow_origin: '*'
+  // convenience function to log server messages on the client
+  function log() {
+    var array = ['Message from server:'];
+    array.push.apply(array, arguments);
+    socket.emit('log', array);
   }
-};
 
-var nms = new NodeMediaServer(config)
-nms.run();
-nms.on('preConnect', (id, args) => {
-  console.log('[NodeEvent on preConnect]', `id=${id} args=${JSON.stringify(args)}`);
-  // let session = nms.getSession(id);
-  // session.reject();
+  socket.on('message', function(message) {
+    log('Client said: ', message);
+    // for a real app, would be room-only (not broadcast)
+    socket.broadcast.emit('message', message);  
 });
 
-nms.on('postConnect', (id, args) => {
-  console.log('[NodeEvent on postConnect]', `id=${id} args=${JSON.stringify(args)}`);
-});
+  socket.on('create or join', function(room) {
+    log('Received request to create or join room ' + room);
 
-nms.on('doneConnect', (id, args) => {
-  console.log('[NodeEvent on doneConnect]', `id=${id} args=${JSON.stringify(args)}`);
-});
+    var numClients = io.sockets.sockets.length;      
+log('Room ' + room + ' now has ' + numClients + ' client(s)');
 
-nms.on('prePublish', (id, StreamPath, args) => {
-  console.log('[NodeEvent on prePublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-  // let session = nms.getSession(id);
-  // session.reject();
-});
+    if (numClients === 1) {
+      socket.join(room);
+      log('Client ID ' + socket.id + ' created room ' + room);
+      socket.emit('created', room, socket.id);
 
-nms.on('postPublish', (id, StreamPath, args) => {
-  console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-});
-
-nms.on('donePublish', (id, StreamPath, args) => {
-  console.log('[NodeEvent on donePublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-});
-
-nms.on('prePlay', (id, StreamPath, args) => {
-  console.log('[NodeEvent on prePlay]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-  // let session = nms.getSession(id);
-  // session.reject();
-});
-
-nms.on('postPlay', (id, StreamPath, args) => {
-  console.log('[NodeEvent on postPlay]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-});
-
-nms.on('donePlay', (id, StreamPath, args) => {
-  console.log('[NodeEvent on donePlay]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-});
-
-
-io.on("connection", function(socket){
-  console.log("Co nguoi vua ket noi, socket id: " + socket.id);
-
-  // socket.on("client_gui_username", function(data){
-  //   console.log("Co nguoi dang ki username la: " + data);
-  //   if( mangUsersOnline.indexOf(data)>=0){
-  //     socket.emit("server-send-dangki-thatbai", data);
-  //   }else{
-  //     mangUsersOnline.push(data);
-  //     socket.Username = data;
-  //     io.sockets.emit("server-send-dangki-thanhcong", {username:data, id:socket.id});
-  //   }
-  // });
-
-  socket.on("client_gui_message", function(data){
-    // io.sockets.emit("server_gui_message", {Username:socket.Username, msg:data});
-    //socket.emit("server_gui_message", { msg:data});
-    io.sockets.emit("server_gui_message", { msg:data});
+    } else if (numClients === 2) {
+      log('Client ID ' + socket.id + ' joined room ' + room);
+      io.sockets.in(room).emit('join', room);
+      socket.join(room);
+      socket.emit('joined', room, socket.id);
+      io.sockets.in(room).emit('ready');
+    } else { // max 5 clients
+      socket.emit('full', room);
+    }
   });
 
-  // socket.on("user-chocgheo-socketid-khac", function(data){
-  //   io.to(data).emit("server_xuly_chocgheo", socket.Username);
-  // })
+  socket.on('ipaddr', function() {
+    var ifaces = os.networkInterfaces();
+    for (var dev in ifaces) {
+      ifaces[dev].forEach(function(details) {
+        if (details.family === 'IPv4' && details.address !== '127.0.0.1') {
+          socket.emit('ipaddr', details.address);
+        }
+      });
+    }
+  });
+
+  socket.on('bye', function(){
+    console.log('received bye');
+     
+});
 
 });
